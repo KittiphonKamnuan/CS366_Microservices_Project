@@ -35,14 +35,30 @@ pub async fn match_volunteer(
         ));
     }
 
+    // Idempotency check — return existing match if already matched (before any other checks)
+    if let Some(existing) = state
+        .db
+        .find_match_by_task_volunteer(&task_id, &req.volunteer_id)
+        .await?
+    {
+        info!(
+            "[MATCH] duplicate match request, returning existing: {}",
+            existing.match_id
+        );
+        return Ok(HttpResponse::Ok().json(MatchResponse {
+            match_id: existing.match_id,
+            status: existing.status,
+            matched_at: existing.matched_at,
+            note: Some("match already exists".to_string()),
+        }));
+    }
+
     // Load volunteer
     let volunteer = state
         .db
         .get_volunteer(&req.volunteer_id)
         .await?
-        .ok_or_else(|| {
-            AppError::UnprocessableEntity("volunteer not found".to_string())
-        })?;
+        .ok_or_else(|| AppError::UnprocessableEntity("volunteer not found".to_string()))?;
 
     // Check availability
     if volunteer.availability != "available" {
@@ -67,24 +83,6 @@ pub async fn match_volunteer(
         return Err(AppError::UnprocessableEntity(
             "volunteer area does not match task location".to_string(),
         ));
-    }
-
-    // Idempotency check — return existing match if already matched
-    if let Some(existing) = state
-        .db
-        .find_match_by_task_volunteer(&task_id, &req.volunteer_id)
-        .await?
-    {
-        info!(
-            "[MATCH] duplicate match request, returning existing: {}",
-            existing.match_id
-        );
-        return Ok(HttpResponse::Ok().json(MatchResponse {
-            match_id: existing.match_id,
-            status: existing.status,
-            matched_at: existing.matched_at,
-            note: Some("match already exists".to_string()),
-        }));
     }
 
     // Increment volunteers_matched with optimistic locking
