@@ -7,7 +7,16 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::models::task::{CreateTaskRequest, SearchTasksQuery, Task, TaskSummary};
 
-/// POST /tasks — Create a new task (Sync)
+#[utoipa::path(
+    post,
+    path = "/tasks",
+    request_body = CreateTaskRequest,
+    responses(
+        (status = 201, description = "Task created"),
+        (status = 400, description = "Invalid request")
+    ),
+    tag = "Tasks"
+)]
 #[post("/tasks")]
 pub async fn create_task(
     state: web::Data<AppState>,
@@ -15,7 +24,6 @@ pub async fn create_task(
 ) -> Result<HttpResponse, AppError> {
     let req = body.into_inner();
 
-    // Validate
     if req.title.trim().is_empty()
         || req.incident_id.trim().is_empty()
         || req.required_skills.is_empty()
@@ -58,7 +66,20 @@ pub async fn create_task(
     })))
 }
 
-/// GET /tasks — Search tasks (Sync)
+#[utoipa::path(
+    get,
+    path = "/tasks",
+    params(
+        ("location_id" = Option<String>, Query, description = "Filter by location"),
+        ("required_skills" = Option<String>, Query, description = "Filter by skill"),
+        ("status" = Option<String>, Query, description = "Filter by status (default: open)")
+    ),
+    responses(
+        (status = 200, description = "List of tasks", body = Vec<TaskSummary>),
+        (status = 400, description = "Invalid status value")
+    ),
+    tag = "Tasks"
+)]
 #[get("/tasks")]
 pub async fn search_tasks(
     state: web::Data<AppState>,
@@ -66,7 +87,6 @@ pub async fn search_tasks(
 ) -> Result<HttpResponse, AppError> {
     let status = query.status.as_deref().unwrap_or("open");
 
-    // Validate status
     let valid_statuses = ["open", "partially_filled", "filled", "completed", "cancelled"];
     if !valid_statuses.contains(&status) {
         return Err(AppError::BadRequest("invalid status value".to_string()));

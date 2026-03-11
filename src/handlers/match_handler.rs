@@ -7,7 +7,21 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::models::match_model::{Match, MatchResponse, MatchVolunteerRequest};
 
-/// POST /tasks/{task_id}/match — Match volunteer to task (Sync)
+#[utoipa::path(
+    post,
+    path = "/tasks/{task_id}/match",
+    params(
+        ("task_id" = String, Path, description = "Task ID")
+    ),
+    request_body = MatchVolunteerRequest,
+    responses(
+        (status = 201, description = "Match created", body = MatchResponse),
+        (status = 200, description = "Match already exists (idempotent)", body = MatchResponse),
+        (status = 404, description = "Task not found"),
+        (status = 422, description = "Volunteer not available or skills do not match")
+    ),
+    tag = "Matches"
+)]
 #[post("/tasks/{task_id}/match")]
 pub async fn match_volunteer(
     state: web::Data<AppState>,
@@ -35,7 +49,7 @@ pub async fn match_volunteer(
         ));
     }
 
-    // Idempotency check — return existing match if already matched (before any other checks)
+    // Idempotency check — before availability check
     if let Some(existing) = state
         .db
         .find_match_by_task_volunteer(&task_id, &req.volunteer_id)

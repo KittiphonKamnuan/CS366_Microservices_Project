@@ -4,6 +4,8 @@ use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use dotenv::dotenv;
 use log::info;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 mod db;
 mod errors;
@@ -19,12 +21,46 @@ pub struct AppState {
     pub messenger: Arc<Messenger>,
 }
 
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "VolunteerMatch Service",
+        version = "1.0.0",
+        description = "Microservice สำหรับจับคู่อาสาสมัครกับงานในระบบตอบสนองภัยพิบัติ"
+    ),
+    paths(
+        handlers::health::health_check,
+        handlers::volunteer::register_volunteer,
+        handlers::volunteer::update_location,
+        handlers::volunteer::get_location,
+        handlers::task::create_task,
+        handlers::task::search_tasks,
+        handlers::match_handler::match_volunteer,
+    ),
+    components(schemas(
+        models::volunteer::RegisterVolunteerRequest,
+        models::volunteer::RegisterVolunteerResponse,
+        models::volunteer::UpdateLocationRequest,
+        models::volunteer::LocationResponse,
+        models::task::CreateTaskRequest,
+        models::task::TaskSummary,
+        models::match_model::MatchVolunteerRequest,
+        models::match_model::MatchResponse,
+    )),
+    tags(
+        (name = "Health", description = "Health check"),
+        (name = "Volunteers", description = "ลงทะเบียนและติดตาม GPS อาสาสมัคร"),
+        (name = "Tasks", description = "สร้างและค้นหางาน"),
+        (name = "Matches", description = "จับคู่อาสากับงาน"),
+    )
+)]
+struct ApiDoc;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
-    // PostgreSQL connection
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
 
@@ -34,7 +70,6 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to Postgres");
 
-    // Run migrations on startup
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
@@ -42,7 +77,6 @@ async fn main() -> std::io::Result<()> {
 
     info!("Database connected and migrations applied");
 
-    // AWS config — uses EC2 IAM role automatically on AWS
     let aws_cfg = aws_config::defaults(BehaviorVersion::latest())
         .load()
         .await;
@@ -59,6 +93,9 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or(8080);
 
     info!("VolunteerMatch Service starting on {}:{}", host, port);
+    info!("Swagger UI: http://{}:{}/swagger-ui/", host, port);
+
+    let openapi = ApiDoc::openapi();
 
     HttpServer::new(move || {
         let state = web::Data::new(AppState {
@@ -81,6 +118,12 @@ async fn main() -> std::io::Result<()> {
                     }),
             )
             .wrap(middleware::Logger::default())
+            // Swagger UI
+            .service(
+                SwaggerUi::new("/swagger-ui/{_:.*}")
+                    .url("/api-docs/openapi.json", openapi.clone()),
+            )
+            // API routes
             .service(handlers::health::health_check)
             .service(handlers::volunteer::register_volunteer)
             .service(handlers::volunteer::update_location)

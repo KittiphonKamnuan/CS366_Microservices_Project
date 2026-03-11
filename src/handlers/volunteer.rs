@@ -10,7 +10,16 @@ use crate::models::volunteer::{
     UpdateLocationRequest, LocationResponse, Volunteer,
 };
 
-/// POST /volunteers — Register a new volunteer (Sync)
+#[utoipa::path(
+    post,
+    path = "/volunteers",
+    request_body = RegisterVolunteerRequest,
+    responses(
+        (status = 201, description = "Volunteer registered", body = RegisterVolunteerResponse),
+        (status = 400, description = "Missing required fields")
+    ),
+    tag = "Volunteers"
+)]
 #[post("/volunteers")]
 pub async fn register_volunteer(
     state: web::Data<AppState>,
@@ -18,7 +27,6 @@ pub async fn register_volunteer(
 ) -> Result<HttpResponse, AppError> {
     let req = body.into_inner();
 
-    // Validate required fields
     if req.name.trim().is_empty()
         || req.phone.trim().is_empty()
         || req.skills.is_empty()
@@ -54,7 +62,20 @@ pub async fn register_volunteer(
     }))
 }
 
-/// PATCH /volunteers/{volunteer_id}/location — Update GPS (Sync + triggers Async event)
+#[utoipa::path(
+    patch,
+    path = "/volunteers/{volunteer_id}/location",
+    params(
+        ("volunteer_id" = String, Path, description = "Volunteer ID")
+    ),
+    request_body = UpdateLocationRequest,
+    responses(
+        (status = 200, description = "Location updated", body = LocationResponse),
+        (status = 400, description = "Invalid coordinates"),
+        (status = 404, description = "Volunteer not found")
+    ),
+    tag = "Volunteers"
+)]
 #[patch("/volunteers/{volunteer_id}/location")]
 pub async fn update_location(
     state: web::Data<AppState>,
@@ -64,7 +85,6 @@ pub async fn update_location(
     let volunteer_id = path.into_inner();
     let req = body.into_inner();
 
-    // Validate Thai bounds
     if !(5.5..=20.5).contains(&req.lat) || !(97.5..=105.7).contains(&req.lng) {
         return Err(AppError::BadRequest(
             "invalid coordinates: lat/lng out of Thailand bounds".to_string(),
@@ -73,13 +93,11 @@ pub async fn update_location(
 
     let now = Utc::now();
 
-    // Update in DynamoDB — will 404 if not found
     state
         .db
         .update_volunteer_location(&volunteer_id, req.lat, req.lng, now)
         .await?;
 
-    // Publish async event to SNS (fire-and-forget in a spawned task)
     let messenger = state.messenger.clone();
     let vid = volunteer_id.clone();
     tokio::spawn(async move {
@@ -104,7 +122,18 @@ pub async fn update_location(
     }))
 }
 
-/// GET /volunteers/{volunteer_id}/location — Get current GPS (Sync)
+#[utoipa::path(
+    get,
+    path = "/volunteers/{volunteer_id}/location",
+    params(
+        ("volunteer_id" = String, Path, description = "Volunteer ID")
+    ),
+    responses(
+        (status = 200, description = "Current GPS location", body = LocationResponse),
+        (status = 404, description = "Volunteer not found or no GPS data")
+    ),
+    tag = "Volunteers"
+)]
 #[get("/volunteers/{volunteer_id}/location")]
 pub async fn get_location(
     state: web::Data<AppState>,
