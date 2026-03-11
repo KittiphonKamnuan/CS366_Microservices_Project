@@ -1,0 +1,6 @@
+target/
+.env
+.git/
+*.md
+demo.sh
+setup_*.sh
